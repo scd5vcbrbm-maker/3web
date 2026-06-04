@@ -13,6 +13,7 @@ const walletsRoutes = require('./routes/wallets');
 const exchangesRoutes = require('./routes/exchanges');
 const cloudSyncRoutes = require('./routes/cloud-sync');
 const expansionRoutes = require('./routes/expansion');
+const walletSyncRoutes = require('./routes/wallet-sync');
 
 // Import middleware
 const { requestLogger, errorHandler } = require('./middleware/index');
@@ -56,13 +57,15 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    version: '2.0.0',
+    version: '3.0.0',
     features: [
       'multi-wallet-support',
       'exchange-integration',
       'cloud-sync',
       'branch-expansion',
-      'prepaid-cards'
+      'prepaid-cards',
+      'wallet-sync',
+      'global-dashboard'
     ]
   });
 });
@@ -76,6 +79,7 @@ app.use('/api/wallets', validateMasterKey, walletsRoutes);
 app.use('/api/exchanges', validateMasterKey, exchangesRoutes);
 app.use('/api/cloud-sync', validateMasterKey, cloudSyncRoutes);
 app.use('/api/expansion', validateMasterKey, expansionRoutes);
+app.use('/api/wallet-sync', validateMasterKey, walletSyncRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -97,7 +101,7 @@ app.listen(PORT, process.env.API_GATEWAY_HOST || '0.0.0.0', () => {
 ║     🌐 3Web SaaS Platform Started        ║
 ║     API Gateway running on port ${PORT}       ║
 ║     Environment: ${process.env.NODE_ENV || 'development'}           ║
-║     Version: 2.0.0 (Enterprise Edition)  ║
+║     Version: 3.0.0 (Global Dashboard)  ║
 ╚══════════════════════════════════════════╝
 
 ✨ Available Features:
@@ -108,6 +112,8 @@ app.listen(PORT, process.env.API_GATEWAY_HOST || '0.0.0.0', () => {
   ✅ Business Expansion
   ✅ Team Management
   ✅ Real-time Analytics
+  ✅ Global Dashboard
+  ✅ External Wallet Sync
   `);
 });
 
