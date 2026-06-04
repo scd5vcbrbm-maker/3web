@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: 3web-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - API_GATEWAY_PORT=3000
+      - DB_HOST=mongodb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - mongodb
+      - redis
+    networks:
+      - 3web-network
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  mongodb:
+    image: mongo:6.0
+    container_name: 3web-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=3web_saas
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - 3web-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: 3web-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - 3web-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  nginx:
+    image: nginx:alpine
+    container_name: 3web-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api-gateway
+    networks:
+      - 3web-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  3web-network:
+    driver: bridge
