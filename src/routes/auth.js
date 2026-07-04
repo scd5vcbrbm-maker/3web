@@ -1,183 +1,160 @@
+/**
+ * Authentication Routes
+ * - Master Key generation and validation
+ * - JWT token management
+ */
+
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const logger = require('../utils/logger');
-const { generateMasterKey } = require('../middleware/auth');
+const Joi = require('joi');
 
-/**
- * POST /api/auth/register
- * Register new user and generate Master Key
- */
+// Validation schemas
+const registerSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(8).required(),
+  name: Joi.string().required()
+});
+
+// POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
-
-    // Validation
-    if (!email || !password || !name) {
+    const { error, value } = registerSchema.validate(req.body);
+    if (error) {
       return res.status(400).json({
-        status: 'error',
-        message: 'Email, password, and name are required',
-        code: 'INVALID_INPUT'
+        success: false,
+        error: error.details[0].message
       });
     }
 
-    // Generate user ID and API Key
-    const userId = uuidv4();
-    const apiKey = uuidv4();
-
-    // Hash password
+    const { email, password, name } = value;
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate Master Key
-    const masterKey = generateMasterKey(userId, apiKey);
-
-    logger.info(`New user registered: ${email}`);
-
-    res.status(201).json({
-      status: 'success',
-      data: {
-        userId,
+    // TODO: Save user to database
+    const masterKey = jwt.sign(
+      {
+        userId: uuidv4(),
         email,
         name,
-        apiKey,
-        masterKey,
-        expiresIn: process.env.TOKEN_EXPIRY || '24h'
+        createdAt: new Date()
       },
-      message: 'User registered successfully'
+      process.env.MASTER_KEY_SECRET,
+      { expiresIn: process.env.TOKEN_EXPIRY || '24h' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      masterKey,
+      expiresIn: process.env.TOKEN_EXPIRY || '24h'
     });
-  } catch (error) {
-    logger.error(`Registration error: ${error.message}`);
+  } catch (err) {
     res.status(500).json({
-      status: 'error',
-      message: 'Registration failed',
-      code: 'REGISTRATION_ERROR'
+      success: false,
+      error: err.message
     });
   }
 });
 
-/**
- * POST /api/auth/login
- * Login user and return Master Key
- */
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({
-        status: 'error',
-        message: 'Email and password are required',
-        code: 'INVALID_INPUT'
+        success: false,
+        error: 'Email and password are required'
       });
     }
 
-    // TODO: Verify email and password against database
-    // For now, generate a sample master key
-    const userId = uuidv4();
-    const apiKey = uuidv4();
-    const masterKey = generateMasterKey(userId, apiKey);
-
-    logger.info(`User login: ${email}`);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        userId,
+    // TODO: Retrieve user from database
+    const masterKey = jwt.sign(
+      {
+        userId: uuidv4(),
         email,
-        masterKey,
-        apiKey,
-        expiresIn: process.env.TOKEN_EXPIRY || '24h'
+        loginTime: new Date()
       },
-      message: 'Login successful'
+      process.env.MASTER_KEY_SECRET,
+      { expiresIn: process.env.TOKEN_EXPIRY || '24h' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      masterKey,
+      expiresIn: process.env.TOKEN_EXPIRY || '24h'
     });
-  } catch (error) {
-    logger.error(`Login error: ${error.message}`);
+  } catch (err) {
     res.status(500).json({
-      status: 'error',
-      message: 'Login failed',
-      code: 'LOGIN_ERROR'
+      success: false,
+      error: err.message
     });
   }
 });
 
-/**
- * POST /api/auth/refresh
- * Refresh Master Key
- */
+// POST /api/auth/refresh
 router.post('/refresh', (req, res) => {
   try {
     const { masterKey } = req.body;
 
     if (!masterKey) {
       return res.status(400).json({
-        status: 'error',
-        message: 'Master Key is required',
-        code: 'INVALID_INPUT'
+        success: false,
+        error: 'Master key is required'
       });
     }
 
-    // Verify old master key
-    const decoded = jwt.verify(masterKey, process.env.MASTER_KEY_SECRET, { ignoreExpiration: true });
-    
-    // Generate new master key
-    const newMasterKey = generateMasterKey(decoded.userId, decoded.apiKey);
-
-    logger.info(`Master Key refreshed for user: ${decoded.userId}`);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        masterKey: newMasterKey,
-        expiresIn: process.env.TOKEN_EXPIRY || '24h'
-      },
-      message: 'Master Key refreshed successfully'
+    const decoded = jwt.verify(masterKey, process.env.MASTER_KEY_SECRET, {
+      ignoreExpiration: true
     });
-  } catch (error) {
-    logger.error(`Token refresh error: ${error.message}`);
-    res.status(401).json({
-      status: 'error',
-      message: 'Invalid Master Key',
-      code: 'INVALID_MASTER_KEY'
+
+    const newMasterKey = jwt.sign(
+      decoded,
+      process.env.MASTER_KEY_SECRET,
+      { expiresIn: process.env.TOKEN_EXPIRY || '24h' }
+    );
+
+    res.json({
+      success: true,
+      masterKey: newMasterKey,
+      expiresIn: process.env.TOKEN_EXPIRY || '24h'
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
     });
   }
 });
 
-/**
- * POST /api/auth/validate
- * Validate Master Key
- */
+// POST /api/auth/validate
 router.post('/validate', (req, res) => {
   try {
-    const { masterKey } = req.body;
+    const masterKey = req.headers['x-master-key'];
 
     if (!masterKey) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Master Key is required',
-        code: 'INVALID_INPUT'
+      return res.status(401).json({
+        success: false,
+        valid: false,
+        error: 'Master key is required'
       });
     }
 
-    const decoded = jwt.verify(masterKey, process.env.MASTER_KEY_SECRET);
+    jwt.verify(masterKey, process.env.MASTER_KEY_SECRET);
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        valid: true,
-        userId: decoded.userId,
-        apiKey: decoded.apiKey,
-        expiresAt: new Date(decoded.exp * 1000).toISOString()
-      },
-      message: 'Master Key is valid'
+    res.json({
+      success: true,
+      valid: true,
+      message: 'Master key is valid'
     });
-  } catch (error) {
+  } catch (err) {
     res.status(401).json({
-      status: 'error',
-      message: 'Invalid or expired Master Key',
-      code: 'INVALID_MASTER_KEY'
+      success: false,
+      valid: false,
+      error: 'Invalid or expired master key'
     });
   }
 });

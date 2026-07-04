@@ -1,246 +1,160 @@
+/**
+ * Web3 Multi-Chain Routes
+ * - Ethereum, Polygon, Arbitrum, Optimism
+ * - Balance checks, transactions, gas prices
+ * - Smart contract interactions
+ */
+
 const express = require('express');
 const router = express.Router();
 const ethers = require('ethers');
-const logger = require('../utils/logger');
 
-/**
- * GET /api/web3/balance/:address
- * Get balance of an Ethereum address
- */
-router.get('/balance/:address', async (req, res) => {
+// Network configurations
+const networks = {
+  ethereum: {
+    rpc: process.env.WEB3_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo',
+    chainId: 1,
+    name: 'Ethereum Mainnet',
+    symbol: 'ETH'
+  },
+  polygon: {
+    rpc: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
+    chainId: 137,
+    name: 'Polygon',
+    symbol: 'MATIC'
+  },
+  arbitrum: {
+    rpc: process.env.ARBITRUM_RPC_URL || 'https://arb1.arbitrum.io/rpc',
+    chainId: 42161,
+    name: 'Arbitrum One',
+    symbol: 'ETH'
+  },
+  optimism: {
+    rpc: process.env.OPTIMISM_RPC_URL || 'https://mainnet.optimism.io',
+    chainId: 10,
+    name: 'Optimism',
+    symbol: 'ETH'
+  }
+};
+
+// Get provider for network
+const getProvider = (network) => {
+  if (!networks[network]) {
+    throw new Error(`Unsupported network: ${network}`);
+  }
+  return new ethers.JsonRpcProvider(networks[network].rpc);
+};
+
+// GET /api/web3/balance/:network/:address
+router.get('/balance/:network/:address', async (req, res) => {
   try {
-    const { address, network = 'mainnet' } = req.query;
-    const addressParam = req.params.address || address;
+    const { network, address } = req.params;
+    const provider = getProvider(network);
 
-    if (!addressParam) {
+    if (!ethers.isAddress(address)) {
       return res.status(400).json({
-        status: 'error',
-        message: 'Address is required',
-        code: 'INVALID_INPUT'
+        success: false,
+        error: 'Invalid Ethereum address'
       });
     }
 
-    // Validate address
-    if (!ethers.isAddress(addressParam)) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid Ethereum address',
-        code: 'INVALID_ADDRESS'
-      });
-    }
+    const balance = await provider.getBalance(address);
+    const formattedBalance = ethers.formatEther(balance);
 
-    // Get provider based on network
-    const provider = new ethers.JsonRpcProvider(
-      network === 'polygon' ? process.env.POLYGON_RPC_URL :
-      network === 'arbitrum' ? process.env.ARBITRUM_RPC_URL :
-      network === 'optimism' ? process.env.OPTIMISM_RPC_URL :
-      process.env.WEB3_PROVIDER_URL
-    );
-
-    const balance = await provider.getBalance(addressParam);
-    const balanceInEth = ethers.formatEther(balance);
-
-    logger.info(`Balance fetched for ${addressParam}: ${balanceInEth} ETH`);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        address: addressParam,
-        balance: balance.toString(),
-        balanceInEth,
-        network,
-        timestamp: new Date().toISOString()
+    res.json({
+      success: true,
+      network: networks[network].name,
+      address,
+      balance: {
+        wei: balance.toString(),
+        formatted: formattedBalance
       },
-      message: 'Balance retrieved successfully'
+      symbol: networks[network].symbol,
+      timestamp: new Date().toISOString()
     });
-  } catch (error) {
-    logger.error(`Balance fetch error: ${error.message}`);
+  } catch (err) {
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch balance',
-      code: 'BALANCE_ERROR',
-      error: error.message
+      success: false,
+      error: err.message
     });
   }
 });
 
-/**
- * GET /api/web3/transaction/:txHash
- * Get transaction details
- */
-router.get('/transaction/:txHash', async (req, res) => {
+// GET /api/web3/gas-price/:network
+router.get('/gas-price/:network', async (req, res) => {
   try {
-    const { txHash } = req.params;
-    const { network = 'mainnet' } = req.query;
+    const { network } = req.params;
+    const provider = getProvider(network);
 
-    if (!txHash) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Transaction hash is required',
-        code: 'INVALID_INPUT'
-      });
-    }
+    const feeData = await provider.getFeeData();
 
-    // Get provider
-    const provider = new ethers.JsonRpcProvider(
-      network === 'polygon' ? process.env.POLYGON_RPC_URL :
-      network === 'arbitrum' ? process.env.ARBITRUM_RPC_URL :
-      network === 'optimism' ? process.env.OPTIMISM_RPC_URL :
-      process.env.WEB3_PROVIDER_URL
-    );
+    res.json({
+      success: true,
+      network: networks[network].name,
+      gasPrice: {
+        gasPrice: ethers.formatUnits(feeData.gasPrice, 'gwei') + ' Gwei',
+        maxFeePerGas: feeData.maxFeePerGas ? ethers.formatUnits(feeData.maxFeePerGas, 'gwei') + ' Gwei' : 'N/A',
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? ethers.formatUnits(feeData.maxPriorityFeePerGas, 'gwei') + ' Gwei' : 'N/A'
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
 
-    const transaction = await provider.getTransaction(txHash);
+// GET /api/web3/transaction/:network/:txHash
+router.get('/transaction/:network/:txHash', async (req, res) => {
+  try {
+    const { network, txHash } = req.params;
+    const provider = getProvider(network);
+
+    const tx = await provider.getTransaction(txHash);
     const receipt = await provider.getTransactionReceipt(txHash);
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        hash: transaction?.hash,
-        from: transaction?.from,
-        to: transaction?.to,
-        value: transaction?.value?.toString(),
-        gasPrice: transaction?.gasPrice?.toString(),
-        gasLimit: transaction?.gasLimit?.toString(),
-        status: receipt?.status,
+    res.json({
+      success: true,
+      network: networks[network].name,
+      transaction: {
+        hash: txHash,
+        from: tx.from,
+        to: tx.to,
+        value: ethers.formatEther(tx.value),
+        gasPrice: ethers.formatUnits(tx.gasPrice, 'gwei') + ' Gwei',
+        gasLimit: tx.gasLimit.toString(),
+        nonce: tx.nonce,
         blockNumber: receipt?.blockNumber,
-        confirmations: receipt?.confirmations,
-        timestamp: new Date().toISOString()
+        confirmations: receipt ? await provider.getBlockNumber() - receipt.blockNumber : 0,
+        status: receipt?.status === 1 ? 'Success' : 'Failed'
       },
-      message: 'Transaction retrieved successfully'
+      timestamp: new Date().toISOString()
     });
-  } catch (error) {
-    logger.error(`Transaction fetch error: ${error.message}`);
+  } catch (err) {
     res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch transaction',
-      code: 'TRANSACTION_ERROR',
-      error: error.message
+      success: false,
+      error: err.message
     });
   }
 });
 
-/**
- * POST /api/web3/send-transaction
- * Send a transaction (requires signing key)
- */
-router.post('/send-transaction', async (req, res) => {
-  try {
-    const { to, amount, network = 'mainnet' } = req.body;
-
-    if (!to || !amount) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'To address and amount are required',
-        code: 'INVALID_INPUT'
-      });
-    }
-
-    // Get provider
-    const provider = new ethers.JsonRpcProvider(
-      network === 'polygon' ? process.env.POLYGON_RPC_URL :
-      network === 'arbitrum' ? process.env.ARBITRUM_RPC_URL :
-      network === 'optimism' ? process.env.OPTIMISM_RPC_URL :
-      process.env.WEB3_PROVIDER_URL
-    );
-
-    logger.info(`Transaction prepared: ${amount} ETH to ${to}`);
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        to,
-        amount,
-        network,
-        message: 'Transaction prepared. Sign and send via web3 wallet.'
-      }
-    });
-  } catch (error) {
-    logger.error(`Transaction send error: ${error.message}`);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to send transaction',
-      code: 'TRANSACTION_ERROR',
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/web3/gas-price
- * Get current gas price
- */
-router.get('/gas-price', async (req, res) => {
-  try {
-    const { network = 'mainnet' } = req.query;
-
-    const provider = new ethers.JsonRpcProvider(
-      network === 'polygon' ? process.env.POLYGON_RPC_URL :
-      network === 'arbitrum' ? process.env.ARBITRUM_RPC_URL :
-      network === 'optimism' ? process.env.OPTIMISM_RPC_URL :
-      process.env.WEB3_PROVIDER_URL
-    );
-
-    const gasPrice = await provider.getGasPrice();
-    const gasPriceInGwei = ethers.formatUnits(gasPrice, 'gwei');
-
-    res.status(200).json({
-      status: 'success',
-      data: {
-        gasPrice: gasPrice.toString(),
-        gasPriceInGwei,
-        network,
-        timestamp: new Date().toISOString()
-      },
-      message: 'Gas price retrieved successfully'
-    });
-  } catch (error) {
-    logger.error(`Gas price fetch error: ${error.message}`);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch gas price',
-      code: 'GAS_PRICE_ERROR',
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/web3/networks
- * Get list of supported networks
- */
+// GET /api/web3/networks
 router.get('/networks', (req, res) => {
-  const networks = [
-    {
-      name: 'Ethereum Mainnet',
-      chain: 'ethereum',
-      id: 1,
-      rpc: process.env.WEB3_PROVIDER_URL
-    },
-    {
-      name: 'Polygon',
-      chain: 'polygon',
-      id: 137,
-      rpc: process.env.POLYGON_RPC_URL
-    },
-    {
-      name: 'Arbitrum One',
-      chain: 'arbitrum',
-      id: 42161,
-      rpc: process.env.ARBITRUM_RPC_URL
-    },
-    {
-      name: 'Optimism',
-      chain: 'optimism',
-      id: 10,
-      rpc: process.env.OPTIMISM_RPC_URL
-    }
-  ];
+  const networkList = Object.entries(networks).map(([key, value]) => ({
+    id: key,
+    name: value.name,
+    chainId: value.chainId,
+    symbol: value.symbol,
+    rpcUrl: value.rpc
+  }));
 
-  res.status(200).json({
-    status: 'success',
-    data: networks,
-    total: networks.length,
-    message: 'Supported networks'
+  res.json({
+    success: true,
+    networks: networkList,
+    supportedNetworks: Object.keys(networks),
+    timestamp: new Date().toISOString()
   });
 });
 
