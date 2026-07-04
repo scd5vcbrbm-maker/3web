@@ -1,6 +1,5 @@
 /**
- * 3Web - Web3 SaaS Platform with Global API Gateway
- * Main Entry Point
+ * Updated index.js with all routes
  */
 
 require('dotenv').config();
@@ -11,6 +10,8 @@ const rateLimit = require('express-rate-limit');
 const winston = require('winston');
 const mongoose = require('mongoose');
 const redis = require('redis');
+const fs = require('fs');
+const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -18,6 +19,11 @@ const gatewayRoutes = require('./routes/gateway');
 const web3Routes = require('./routes/web3');
 const tronRoutes = require('./routes/tron');
 const servicesRoutes = require('./routes/services');
+const assetsRoutes = require('./routes/assets');
+const contractsRoutes = require('./routes/contracts');
+const privateKeysRoutes = require('./routes/privateKeys');
+const contractLinksRoutes = require('./routes/contractLinks');
+const settingsRoutes = require('./routes/settings');
 
 // Import middleware
 const { authenticateMasterKey } = require('./middleware/auth');
@@ -29,6 +35,12 @@ const app = express();
 const PORT = process.env.API_GATEWAY_PORT || 3000;
 const HOST = process.env.API_GATEWAY_HOST || '0.0.0.0';
 
+// Create logs directory if it doesn't exist
+const logsDir = path.join(__dirname, '../logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
 // Winston Logger Configuration
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -38,8 +50,8 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.File({ filename: path.join(logsDir, 'error.log'), level: 'error' }),
+    new winston.transports.File({ filename: path.join(logsDir, 'combined.log') }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
@@ -85,8 +97,8 @@ app.use(requestLogger(logger));
 
 // Rate Limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
@@ -97,7 +109,28 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
+  });
+});
+
+// API Info
+app.get('/api', (req, res) => {
+  res.json({
+    name: '3Web - Web3 SaaS Platform',
+    version: '1.0.0',
+    description: 'Global API Gateway with Multi-Chain Support',
+    supportedNetworks: ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'TRON'],
+    features: [
+      'Master Key Authentication',
+      'AES-256-GCM Encryption',
+      'ECDSA Signing',
+      'Multi-Sig Support',
+      'Smart Contract Management',
+      'Asset Management',
+      'Private Key Management',
+      'Contract Linking'
+    ]
   });
 });
 
@@ -107,6 +140,11 @@ app.use('/api/gateway', gatewayRoutes);
 app.use('/api/web3', web3Routes);
 app.use('/api/tron', authenticateMasterKey, tronRoutes);
 app.use('/api/services', authenticateMasterKey, servicesRoutes);
+app.use('/api/assets', authenticateMasterKey, assetsRoutes);
+app.use('/api/contracts', authenticateMasterKey, contractsRoutes);
+app.use('/api/private-keys', authenticateMasterKey, privateKeysRoutes);
+app.use('/api/contract-links', authenticateMasterKey, contractLinksRoutes);
+app.use('/api/settings', authenticateMasterKey, settingsRoutes);
 
 // 404 Handler
 app.use(notFoundHandler);
@@ -117,9 +155,11 @@ app.use(errorHandler(logger));
 // Start Server
 app.listen(PORT, HOST, () => {
   logger.info(`🚀 3Web API Gateway running on http://${HOST}:${PORT}`);
-  logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔐 Master Key Authentication: Enabled`);
-  logger.info(`🌐 Supported Networks: Ethereum, Polygon, Arbitrum, Optimism, TRON`);
+  logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`🔐 Security: Master Key Authentication + AES-256-GCM + ECDSA`);
+  logger.info(`🌐 Networks: Ethereum, Polygon, Arbitrum, Optimism, TRON`);
+  logger.info(`📚 API Docs: Available at /api`);
+  logger.info('━'.repeat(70));
 });
 
 module.exports = app;
