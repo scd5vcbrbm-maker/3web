@@ -24,6 +24,8 @@ const contractsRoutes = require('./routes/contracts');
 const privateKeysRoutes = require('./routes/privateKeys');
 const contractLinksRoutes = require('./routes/contractLinks');
 const settingsRoutes = require('./routes/settings');
+const manualConfigRoutes = require('./routes/manualConfig');
+const dataMigrationRoutes = require('./routes/dataMigration');
 
 // Import middleware
 const { authenticateMasterKey } = require('./middleware/auth');
@@ -35,10 +37,15 @@ const app = express();
 const PORT = process.env.API_GATEWAY_PORT || 3000;
 const HOST = process.env.API_GATEWAY_HOST || '0.0.0.0';
 
-// Create logs directory if it doesn't exist
+// Create logs and backups directories
 const logsDir = path.join(__dirname, '../logs');
+const backupsDir = path.join(__dirname, '../backups');
+
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
+}
+if (!fs.existsSync(backupsDir)) {
+  fs.mkdirSync(backupsDir, { recursive: true });
 }
 
 // Winston Logger Configuration
@@ -89,8 +96,8 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
   credentials: JSON.parse(process.env.CORS_CREDENTIALS || 'true')
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Request Logger
 app.use(requestLogger(logger));
@@ -119,8 +126,8 @@ app.get('/api', (req, res) => {
   res.json({
     name: '3Web - Web3 SaaS Platform',
     version: '1.0.0',
-    description: 'Global API Gateway with Multi-Chain Support',
-    supportedNetworks: ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'TRON'],
+    description: 'Global API Gateway with Multi-Chain Support & Data Migration',
+    supportedNetworks: ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'TRON', 'Binance'],
     features: [
       'Master Key Authentication',
       'AES-256-GCM Encryption',
@@ -129,8 +136,14 @@ app.get('/api', (req, res) => {
       'Smart Contract Management',
       'Asset Management',
       'Private Key Management',
-      'Contract Linking'
-    ]
+      'Contract Linking',
+      'Data Migration',
+      'Multi-Database Support',
+      'API Key Management',
+      'Binance Integration'
+    ],
+    supportedDatabases: ['MongoDB', 'PostgreSQL', 'MySQL', 'Firebase'],
+    supportedFileFormats: ['CSV', 'JSON', 'Excel (XLSX)']
   });
 });
 
@@ -145,6 +158,8 @@ app.use('/api/contracts', authenticateMasterKey, contractsRoutes);
 app.use('/api/private-keys', authenticateMasterKey, privateKeysRoutes);
 app.use('/api/contract-links', authenticateMasterKey, contractLinksRoutes);
 app.use('/api/settings', authenticateMasterKey, settingsRoutes);
+app.use('/api/config', authenticateMasterKey, manualConfigRoutes);
+app.use('/api/migration', authenticateMasterKey, dataMigrationRoutes);
 
 // 404 Handler
 app.use(notFoundHandler);
@@ -156,9 +171,10 @@ app.use(errorHandler(logger));
 app.listen(PORT, HOST, () => {
   logger.info(`🚀 3Web API Gateway running on http://${HOST}:${PORT}`);
   logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`🔐 Security: Master Key Authentication + AES-256-GCM + ECDSA`);
-  logger.info(`🌐 Networks: Ethereum, Polygon, Arbitrum, Optimism, TRON`);
-  logger.info(`📚 API Docs: Available at /api`);
+  logger.info(`🔐 Security: Master Key + AES-256-GCM + ECDSA + API Keys`);
+  logger.info(`🌐 Networks: Ethereum, Polygon, Arbitrum, Optimism, TRON, Binance`);
+  logger.info(`📊 Databases: MongoDB, PostgreSQL, MySQL, Firebase`);
+  logger.info(`📄 Migration: CSV, JSON, Excel Upload & Sync`);
   logger.info('━'.repeat(70));
 });
 
